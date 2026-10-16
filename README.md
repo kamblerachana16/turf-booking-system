@@ -1,92 +1,131 @@
 # Turf Booking System
 
-A Java / Spring Boot REST API for booking sports courts. It prevents double bookings and keeps a waiting list that automatically assigns a slot when someone cancels.
+## About the Project
+This project is built using Java and Spring Boot for booking sports courts. Customers can book a court for a selected date and time. The system prevents double bookings and maintains a waiting list. When a customer cancels a booking, the system automatically assigns the available slot to the next eligible customer on the waiting list.
 
-## Tech stack
-Java 17, Spring Boot 3, Spring Data JPA (Hibernate), MySQL, Bean Validation, JUnit 5 + Mockito, Swagger UI (springdoc), Maven.
+## Technologies Used
+- Java 17
+- Spring Boot 3
+- Spring Data JPA and Hibernate
+- MySQL
+- Bean Validation
+- JUnit 5 and Mockito
+- Swagger UI
+- Maven
 
 ## Features
-- Manage courts and customers
-- Book a court for a time range (price calculated from duration)
-- Double-booking prevention (overlap detection)
-- Cancel (soft cancel, history kept) and reschedule bookings
-- Waiting list that auto-assigns freed slots, first come first served
-- Clean JSON error responses with proper HTTP status codes (400, 404, 409)
+- Create, view, and update courts and customers.
+- Book courts for a selected date and time.
+- Calculate the booking price based on duration.
+- Prevent overlapping bookings.
+- Cancel bookings while keeping their history.
+- Reschedule existing bookings.
+- Maintain a waiting list and automatically assign cancelled slots.
+- Return appropriate HTTP status codes and error messages.
 
-## DSA used
-| Where | Structure / algorithm | Why |
-|---|---|---|
-| `SchedulingService.hasConflict` | `TreeMap` (sorted by start time), `floorEntry` / `ceilingEntry` | Only the two neighbouring bookings need checking, so each check is O(log n) instead of scanning all bookings |
-| `WaitlistService.processWaitlist` | `PriorityQueue` (min-heap) | The longest-waiting customer is always served first; `poll()` is O(log n) |
+## DSA Used
 
-Overlap rule: two ranges overlap when `newStart < existingEnd` AND `newEnd > existingStart`. Back-to-back bookings (10:00-11:00 and 11:00-12:00) are allowed.
+**1. TreeMap**
+Used in `SchedulingService` to keep bookings sorted by start time. The system checks the bookings immediately before and after the requested time slot to detect conflicts, instead of scanning every booking.
 
-Concurrency: the court row is locked (`PESSIMISTIC_WRITE`) inside a transaction while booking, cancelling or rescheduling, so two simultaneous requests cannot both pass the conflict check.
+**2. PriorityQueue**
+Used in `WaitlistService` to manage the waiting list. It processes customers in first-come, first-served order, so the customer who has waited the longest gets the available slot first.
 
-## Run locally
-1. Install JDK 17, Maven (or use VS Code's Java tools) and MySQL.
-2. Set your database credentials as environment variables (do not commit your password):
-   - Windows (PowerShell): `$env:DB_USERNAME="root"; $env:DB_PASSWORD="your_password"`
-   - Mac/Linux: `export DB_USERNAME=root DB_PASSWORD=your_password`
-3. The database `turf_booking` is created automatically if it does not exist. Tables are created on first run.
-4. Run: `mvn spring-boot:run` (or run `TurfBookingApplication` from VS Code).
-5. API runs on http://localhost:8080 and Swagger UI is at http://localhost:8080/swagger-ui.html
-6. Run tests: `mvn test` (the tests do not need a database).
+## Booking Conflict Rule
+Two bookings overlap when the new booking starts before an existing booking ends and ends after the existing booking starts.
 
-## API
-Date format: `yyyy-MM-dd`. Time format: `HH:mm`. Bookings must be between 06:00 and 23:00 and at least 30 minutes long.
+This allows back-to-back bookings. For example, one customer can book from 10:00 to 11:00 and another from 11:00 to 12:00.
 
-| Method | URL | Description |
+## Concurrency Handling
+The system uses database row locking with `PESSIMISTIC_WRITE` inside a transaction when booking, cancelling, or rescheduling. This helps prevent simultaneous requests from booking the same court and time slot.
+
+## API Endpoints
+
+| Method | Endpoint | Description |
 |---|---|---|
 | POST | `/courts` | Create a court |
-| GET | `/courts`, `/courts/{id}` | List / get courts |
+| GET | `/courts` | Get all courts |
+| GET | `/courts/{id}` | Get a court by ID |
 | PUT | `/courts/{id}` | Update a court |
 | POST | `/customers` | Create a customer |
-| GET | `/customers`, `/customers/{id}` | List / get customers |
+| GET | `/customers` | Get all customers |
+| GET | `/customers/{id}` | Get a customer by ID |
 | PUT | `/customers/{id}` | Update a customer |
-| POST | `/bookings` | Create a booking (409 if the slot is taken) |
+| POST | `/bookings` | Create a booking |
 | GET | `/bookings/{id}` | Get a booking |
-| GET | `/bookings?customerId=1` or `?courtId=1&date=2026-10-20` | Search bookings |
-| PUT | `/bookings/{id}/reschedule` | Move a booking |
-| DELETE | `/bookings/{id}` | Cancel a booking and trigger the waiting list |
-| POST | `/waitlist` | Join the waiting list for a taken slot |
-| GET | `/waitlist?courtId=1&date=2026-10-20` | View the waiting list |
+| GET | `/bookings?customerId=1` | Search bookings by customer |
+| GET | `/bookings?courtId=1&date=2026-12-20` | Search bookings by court and date |
+| PUT | `/bookings/{id}/reschedule` | Reschedule a booking |
+| DELETE | `/bookings/{id}` | Cancel a booking |
+| POST | `/waitlist` | Join the waiting list |
+| GET | `/waitlist?courtId=1&date=2026-12-20` | View the waiting list |
 
-### Sample requests
-Create a court (`POST /courts`):
+A conflicting booking returns `409 Conflict`, while invalid requests return `400 Bad Request` and missing records return `404 Not Found`.
+
+## Sample Requests
+
+**Create a court** — `POST /courts`
+
 ```json
-{ "name": "Court A", "sportType": "Football", "pricePerHour": 1200 }
-```
-Create a customer (`POST /customers`):
-```json
-{ "name": "Rahul Patil", "phone": "9876543210", "email": "rahul@example.com" }
-```
-Book a slot (`POST /bookings`), use a future date:
-```json
-{ "courtId": 1, "customerId": 1, "date": "2026-12-20", "startTime": "18:00", "endTime": "19:30" }
-```
-Reschedule (`PUT /bookings/1/reschedule`):
-```json
-{ "date": "2026-12-21", "startTime": "19:00", "endTime": "20:00" }
+{
+  "name": "Court A",
+  "sportType": "Football",
+  "pricePerHour": 1200
+}
 ```
 
-### Try the full story in Postman
-1. Create a court and two customers.
-2. Customer 1 books Court A, 18:00-19:00 -> 201 Created.
-3. Customer 2 books the same slot -> 409 Conflict.
-4. Customer 2 joins the waiting list (`POST /waitlist`, same body) -> 201.
-5. Cancel booking 1 (`DELETE /bookings/1`).
-6. `GET /bookings?courtId=1&date=...` shows a new BOOKED booking for customer 2, and the waiting entry is now ASSIGNED.
+**Create a customer** — `POST /customers`
 
-## Project structure
-```
-controller/  REST endpoints
-service/     business logic (SchedulingService = overlap + price, WaitlistService = PriorityQueue)
-repository/  Spring Data JPA repositories
-model/       JPA entities and enums
-dto/         request / response objects
-exception/   custom exceptions + global handler
+```json
+{
+  "name": "Rahul Patil",
+  "phone": "9876543210",
+  "email": "rahul@example.com"
+}
 ```
 
-## Possible improvements
-Peak-hour pricing, user login (Spring Security), pagination, Docker, a small frontend.
+**Book a court** — `POST /bookings`
+
+```json
+{
+  "courtId": 1,
+  "customerId": 1,
+  "date": "2026-12-20",
+  "startTime": "18:00",
+  "endTime": "19:30"
+}
+```
+
+**Reschedule a booking** — `PUT /bookings/1/reschedule`
+
+```json
+{
+  "date": "2026-12-21",
+  "startTime": "19:00",
+  "endTime": "20:00"
+}
+```
+
+## How to Run the Project
+1. Install Java 17, Maven, and MySQL.
+2. Set `DB_USERNAME` and `DB_PASSWORD` as environment variables. In VS Code you can do this in `.vscode/launch.json` under `env`. Never commit your password.
+3. Run `mvn spring-boot:run` from the project directory, or run `TurfBookingApplication` from VS Code.
+4. Open `http://localhost:8080/swagger-ui.html` to view and test the APIs.
+5. Run `mvn test` to execute the test cases.
+
+## What I Learned
+While working on this project, I learned how to build REST APIs using Spring Boot, connect the application to a MySQL database, and manage data using Spring Data JPA.
+
+I also learned how to test APIs using Swagger UI, write unit tests with JUnit and Mockito, and use a TreeMap and a PriorityQueue to solve a real scheduling problem.
+
+## Challenges
+One of the main challenges was preventing two customers from booking the same court and time slot. I addressed this using booking overlap checks and database locking.
+
+Another challenge was managing the waiting list so that a cancelled slot could be assigned to the next customer in the correct order.
+
+## Future Improvements
+- Add user authentication and authorization.
+- Develop a frontend for customers.
+- Introduce peak-hour pricing.
+- Add pagination for large datasets.
+- Containerize the application using Docker.
